@@ -3,7 +3,7 @@ Serilog sink that writes to MySQL database.
 
 ## Getting started
 
-Install [Serilog.Sinks.MySQL](#) from NuGet
+Install [Serilog.Sinks.MySQL](https://www.nuget.org/packages/Serilog.Sinks.MySQL) from NuGet
 
 ```PowerShell
 Install-Package Serilog.Sinks.MySQL
