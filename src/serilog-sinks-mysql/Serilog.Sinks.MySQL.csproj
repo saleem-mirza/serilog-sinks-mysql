@@ -65,7 +65,6 @@
     <Compile Include="Sinks\MySQL\MySqlSink.cs" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="app.config" />
     <None Include="packages.config" />
     <None Include="Serilog.Sinks.MySQL.nuspec" />
     <None Include="Serilog.snk" />
