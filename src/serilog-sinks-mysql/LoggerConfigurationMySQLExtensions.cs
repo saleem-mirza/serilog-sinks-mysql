@@ -1,4 +1,4 @@
-﻿// Copyright 2016 Serilog Contributors
+﻿// Copyright 2016 Zethian Inc.
 // 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,17 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+using System;
+using Serilog.Configuration;
 using Serilog.Debugging;
+using Serilog.Events;
+using Serilog.Sinks.MySQL;
 
 namespace Serilog
 {
-    using System;
-    using Serilog.Configuration;
-    using Serilog.Events;
-    using Serilog.Sinks.MySQL;
-
     /// <summary>
-    ///     Adds the WriteTo.SQLite() extension method to <see cref="LoggerConfiguration" />.
+    ///     Adds the WriteTo.MySQL() extension method to <see cref="LoggerConfiguration" />.
     /// </summary>
     public static class LoggerConfigurationMySqlExtensions
     {
@@ -43,14 +42,10 @@ namespace Serilog
             bool storeTimestampInUtc = false)
         {
             if (loggerConfiguration == null)
-            {
                 throw new ArgumentNullException(nameof(loggerConfiguration));
-            }
 
             if (string.IsNullOrEmpty(connectionString))
-            {
                 throw new ArgumentNullException(nameof(connectionString));
-            }
 
             try
             {

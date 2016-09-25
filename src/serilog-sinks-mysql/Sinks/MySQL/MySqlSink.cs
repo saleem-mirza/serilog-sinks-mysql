@@ -1,10 +1,24 @@
-﻿using System;
+﻿// Copyright 2016 Zethian Inc.
+// 
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// 
+//     http://www.apache.org/licenses/LICENSE-2.0
+// 
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+using System;
 using System.Collections.Generic;
 using System.Text;
 using MySql.Data.MySqlClient;
-using Serilog.Events;
 using Serilog.Core;
 using Serilog.Debugging;
+using Serilog.Events;
 using Serilog.Extensions;
 using Serilog.Sinks.Batch;
 
@@ -13,8 +27,8 @@ namespace Serilog.Sinks.MySQL
     internal class MySqlSink : BatchProvider, ILogEventSink
     {
         private readonly string _connectionString;
-        private readonly string _tableName;
         private readonly bool _storeTimestampInUtc;
+        private readonly string _tableName;
 
         public MySqlSink(string connectionString,
             string tableName = "Logs",
@@ -26,6 +40,11 @@ namespace Serilog.Sinks.MySQL
 
             var sqlConnection = GetSqlConnection();
             CreateTable(sqlConnection);
+        }
+
+        public void Emit(LogEvent logEvent)
+        {
+            PushEvent(logEvent);
         }
 
         private MySqlConnection GetSqlConnection()
@@ -79,17 +98,11 @@ namespace Serilog.Sinks.MySQL
                 var cmd = sqlConnection.CreateCommand();
                 cmd.CommandText = tableCommandBuilder.ToString();
                 cmd.ExecuteNonQuery();
-
             }
             catch (Exception ex)
             {
                 SelfLog.WriteLine(ex.Message);
             }
-        }
-
-        public void Emit(LogEvent logEvent)
-        {
-            PushEvent(logEvent);
         }
 
         protected override void WriteLogEvent(ICollection<LogEvent> logEventsBatch)
