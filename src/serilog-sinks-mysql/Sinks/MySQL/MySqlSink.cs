@@ -119,9 +119,9 @@ namespace Serilog.Sinks.MySQL
                         foreach (var logEvent in logEventsBatch)
                         {
                             insertCommand.Parameters["@ts"].Value = _storeTimestampInUtc
-                                ? logEvent.Timestamp.ToUniversalTime().ToString("o")
-                                : logEvent.Timestamp.ToString("o");
-
+                                ? logEvent.Timestamp.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss.fffzzz")
+                                : logEvent.Timestamp.ToString("yyyy-MM-dd HH:mm:ss.fffzzz");
+                             
                             insertCommand.Parameters["@lvel"].Value = logEvent.Level.ToString();
                             insertCommand.Parameters["@msg"].Value = logEvent.MessageTemplate.ToString();
                             insertCommand.Parameters["@ex"].Value = logEvent.Exception?.ToString();
