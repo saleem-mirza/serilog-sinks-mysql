@@ -1,5 +1,5 @@
 {
-    "title": "Serilog.Sinks.SQLite",
+    "title": "Serilog.Sinks.MySQL",
     "version": "2.1.5-*",
     "description": "Serilog event sink that writes to MySQL database",
     "authors": [
