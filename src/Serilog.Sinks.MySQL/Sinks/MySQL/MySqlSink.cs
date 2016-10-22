@@ -19,8 +19,8 @@ using MySql.Data.MySqlClient;
 using Serilog.Core;
 using Serilog.Debugging;
 using Serilog.Events;
-using Serilog.Extensions;
 using Serilog.Sinks.Batch;
+using Serilog.Sinks.Extensions;
 
 namespace Serilog.Sinks.MySQL
 {
