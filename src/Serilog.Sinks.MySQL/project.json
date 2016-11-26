@@ -1,6 +1,6 @@
 {
     "title": "Serilog.Sinks.MySQL",
-    "version": "2.5.1-*",
+    "version": "2.6.38-*",
     "description": "Serilog event sink that writes to MySQL database",
     "authors": [
         "Saleem Mirza"
