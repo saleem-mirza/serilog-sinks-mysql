@@ -1,0 +1,41 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyTitle>Serilog.Sinks.MySQL</AssemblyTitle>
+    <Authors>Saleem Mirza</Authors>
+    <AssemblyName>Serilog.Sinks.MySQL</AssemblyName>
+    <Description>Serilog event sink that writes to MySQL database</Description>	
+    <PackageId>Serilog.Sinks.MySQL</PackageId>
+    <PackageTags>serilog;logging;MySQL</PackageTags>
+    <PackageIconUrl>http://serilog.net/images/serilog-sink-nuget.png</PackageIconUrl>
+    <PackageProjectUrl>http://serilog.net</PackageProjectUrl>
+    <PackageLicenseUrl>http://www.apache.org/licenses/LICENSE-2.0</PackageLicenseUrl>
+    <Copyright>Copyright © Zethian Inc. 2013-2017</Copyright>
+    <AssemblyVersion>2.7.0.0</AssemblyVersion>	
+	  <Version>2.7.0</Version>
+    <SignAssembly>True</SignAssembly>
+    <AssemblyOriginatorKeyFile>Serilog.snk</AssemblyOriginatorKeyFile>
+    <TargetFrameworks>net45</TargetFrameworks>	
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(VersionSuffix)'!='' ">
+    <Version>$(Version)-$(VersionSuffix)</Version>
+  </PropertyGroup>
+  
+  <ItemGroup>
+    <PackageReference Include="MySql.Data" Version="6.9.9" />
+    <PackageReference Include="Newtonsoft.Json" Version="9.0.1" />
+    <PackageReference Include="Serilog" Version="2.4.0" />
+    <PackageReference Include="System.Data.Common" Version="4.3.0" />
+  </ItemGroup>
+
+  <ItemGroup Condition=" '$(TargetFramework)' == 'net45' ">
+    <Reference Include="System" />
+    <Reference Include="Microsoft.CSharp" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Properties\" />
+  </ItemGroup>
+
+</Project>
