@@ -1,4 +1,4 @@
-﻿// Copyright 2016 Zethian Inc.
+﻿// Copyright 2017 Zethian Inc.
 // 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -33,13 +33,16 @@ namespace Serilog
         /// <param name="tableName">The name of the MySQL table to store log.</param>
         /// <param name="restrictedToMinimumLevel">The minimum log event level required in order to write an event to the sink.</param>
         /// <param name="storeTimestampInUtc">Store timestamp in UTC format</param>
+        /// <param name="batchSize">Number of log messages to be sent as batch. Supported range is between 1 and 1000</param>
+
         /// <exception cref="ArgumentNullException">A required parameter is null.</exception>
         public static LoggerConfiguration MySQL(
             this LoggerSinkConfiguration loggerConfiguration,
             string connectionString,
             string tableName = "Logs",
             LogEventLevel restrictedToMinimumLevel = LevelAlias.Minimum,
-            bool storeTimestampInUtc = false)
+            bool storeTimestampInUtc = false,
+            uint batchSize = 100)
         {
             if (loggerConfiguration == null)
                 throw new ArgumentNullException(nameof(loggerConfiguration));
@@ -47,10 +50,12 @@ namespace Serilog
             if (string.IsNullOrEmpty(connectionString))
                 throw new ArgumentNullException(nameof(connectionString));
 
+            if(batchSize < 1 || batchSize > 1000)
+                throw new ArgumentOutOfRangeException("[batchSize] argument must be between 1 and 1000 inclusive");
             try
             {
                 return loggerConfiguration.Sink(
-                    new MySqlSink(connectionString, tableName, storeTimestampInUtc),
+                    new MySqlSink(connectionString, tableName, storeTimestampInUtc, batchSize),
                     restrictedToMinimumLevel);
             }
             catch (Exception ex)
