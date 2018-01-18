@@ -1,4 +1,4 @@
-﻿// Copyright 2016 Zethian Inc.
+﻿// Copyright 2017 Zethian Inc.
 // 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Threading.Tasks;
 using MySql.Data.MySqlClient;
 using Serilog.Core;
 using Serilog.Debugging;
@@ -30,9 +31,11 @@ namespace Serilog.Sinks.MySQL
         private readonly bool _storeTimestampInUtc;
         private readonly string _tableName;
 
-        public MySqlSink(string connectionString,
+        public MySqlSink(
+            string connectionString,
             string tableName = "Logs",
-            bool storeTimestampInUtc = false) : base(500, Environment.ProcessorCount)
+            bool storeTimestampInUtc = false,
+            uint batchSize = 100) : base((int) batchSize)
         {
             _connectionString = connectionString;
             _tableName = tableName;
@@ -105,37 +108,47 @@ namespace Serilog.Sinks.MySQL
             }
         }
 
-        protected override void WriteLogEvent(ICollection<LogEvent> logEventsBatch)
+        protected override async Task<bool> WriteLogEventAsync(ICollection<LogEvent> logEventsBatch)
         {
             try
             {
                 using (var sqlCon = GetSqlConnection())
                 {
-                    using (var tr = sqlCon.BeginTransaction())
+                    using (var tr = await sqlCon.BeginTransactionAsync()
+                        .ConfigureAwait(false))
                     {
                         var insertCommand = GetInsertCommand(sqlCon);
                         insertCommand.Transaction = tr;
 
                         foreach (var logEvent in logEventsBatch)
                         {
-                            insertCommand.Parameters["@ts"].Value = _storeTimestampInUtc
-                                ? logEvent.Timestamp.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss.fffzzz")
+                            insertCommand.Parameters["@ts"]
+                                .Value = _storeTimestampInUtc
+                                ? logEvent.Timestamp.ToUniversalTime()
+                                    .ToString("yyyy-MM-dd HH:mm:ss.fffzzz")
                                 : logEvent.Timestamp.ToString("yyyy-MM-dd HH:mm:ss.fffzzz");
-                             
-                            insertCommand.Parameters["@lvel"].Value = logEvent.Level.ToString();
-                            insertCommand.Parameters["@msg"].Value = logEvent.MessageTemplate.ToString();
-                            insertCommand.Parameters["@ex"].Value = logEvent.Exception?.ToString();
-                            insertCommand.Parameters["@prop"].Value = logEvent.Properties.Json();
 
-                            insertCommand.ExecuteNonQuery();
+                            insertCommand.Parameters["@lvel"]
+                                .Value = logEvent.Level.ToString();
+                            insertCommand.Parameters["@msg"]
+                                .Value = logEvent.MessageTemplate.ToString();
+                            insertCommand.Parameters["@ex"]
+                                .Value = logEvent.Exception?.ToString();
+                            insertCommand.Parameters["@prop"]
+                                .Value = logEvent.Properties.Json();
+
+                            await insertCommand.ExecuteNonQueryAsync()
+                                .ConfigureAwait(false);
                         }
                         tr.Commit();
+                        return true;
                     }
                 }
             }
             catch (Exception ex)
             {
                 SelfLog.WriteLine(ex.Message);
+                return false;
             }
         }
     }
