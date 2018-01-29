@@ -41,8 +41,10 @@ namespace Serilog.Sinks.MySQL
             _tableName = tableName;
             _storeTimestampInUtc = storeTimestampInUtc;
 
-            var sqlConnection = GetSqlConnection();
-            CreateTable(sqlConnection);
+            using (var sqlConnection = GetSqlConnection())
+            {
+                CreateTable(sqlConnection);
+            }
         }
 
         public void Emit(LogEvent logEvent)
@@ -140,7 +142,8 @@ namespace Serilog.Sinks.MySQL
                             await insertCommand.ExecuteNonQueryAsync()
                                 .ConfigureAwait(false);
                         }
-                        tr.Commit();
+                        await tr.CommitAsync()
+                            .ConfigureAwait(false);
                         return true;
                     }
                 }
