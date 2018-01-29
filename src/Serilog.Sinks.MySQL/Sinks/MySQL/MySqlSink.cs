@@ -142,7 +142,8 @@ namespace Serilog.Sinks.MySQL
                             await insertCommand.ExecuteNonQueryAsync()
                                 .ConfigureAwait(false);
                         }
-                        tr.Commit();
+                        await tr.CommitAsync()
+                            .ConfigureAwait(false);
                         return true;
                     }
                 }
