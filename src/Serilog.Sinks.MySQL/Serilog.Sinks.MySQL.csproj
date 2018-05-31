@@ -11,11 +11,11 @@
     <PackageProjectUrl>http://serilog.net</PackageProjectUrl>
     <PackageLicenseUrl>http://www.apache.org/licenses/LICENSE-2.0</PackageLicenseUrl>
     <Copyright>Copyright © Zethian Inc. 2013-2017</Copyright>
-    <AssemblyVersion>2.7.5.0</AssemblyVersion>	
-	  <Version>2.7.5</Version>
+    <AssemblyVersion>3.1.0.0</AssemblyVersion>	
+	  <Version>3.1.0</Version>
     <SignAssembly>True</SignAssembly>
     <AssemblyOriginatorKeyFile>Serilog.snk</AssemblyOriginatorKeyFile>
-    <TargetFrameworks>netstandard1.3;net452</TargetFrameworks>	
+    <TargetFrameworks>netstandard1.6;net452;netcoreapp2.1</TargetFrameworks>	
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(VersionSuffix)'!='' ">
@@ -23,15 +23,11 @@
   </PropertyGroup>
   
   <ItemGroup>
-    <PackageReference Include="MySql.Data" Version="6.10.4" />
-    <PackageReference Include="Newtonsoft.Json" Version="10.0.3" />
-    <PackageReference Include="Serilog" Version="2.5.0" />
+    <PackageReference Include="Microsoft.CSharp" Version="4.5.0" />      
+    <PackageReference Include="MySql.Data" Version="8.0.11" />
+    <PackageReference Include="Newtonsoft.Json" Version="11.0.2" />
+    <PackageReference Include="Serilog" Version="2.7.1" />
     <PackageReference Include="System.Data.Common" Version="4.3.0" />
-  </ItemGroup>
-
-  <ItemGroup Condition=" '$(TargetFramework)' == 'net452' ">
-    <Reference Include="System" />
-    <Reference Include="Microsoft.CSharp" />
   </ItemGroup>
 
   <ItemGroup>
