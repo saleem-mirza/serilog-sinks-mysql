@@ -1,37 +1,39 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <AssemblyTitle>Serilog.Sinks.MySQL</AssemblyTitle>
-    <Authors>Saleem Mirza</Authors>
-    <AssemblyName>Serilog.Sinks.MySQL</AssemblyName>
-    <Description>Serilog event sink that writes to MySQL database</Description>	
-    <PackageId>Serilog.Sinks.MySQL</PackageId>
-    <PackageTags>serilog;logging;MySQL</PackageTags>
-    <PackageIconUrl>http://serilog.net/images/serilog-sink-nuget.png</PackageIconUrl>
-    <PackageProjectUrl>http://serilog.net</PackageProjectUrl>
-    <PackageLicenseUrl>http://www.apache.org/licenses/LICENSE-2.0</PackageLicenseUrl>
-    <Copyright>Copyright © Zethian Inc. 2013-2017</Copyright>
-    <AssemblyVersion>3.1.5.0</AssemblyVersion>	
-	  <Version>3.1.5</Version>
-    <SignAssembly>True</SignAssembly>
-    <AssemblyOriginatorKeyFile>Serilog.snk</AssemblyOriginatorKeyFile>
-    <TargetFrameworks>netstandard1.6;net452;netcoreapp2.1</TargetFrameworks>	
-  </PropertyGroup>
+    <PropertyGroup>
+        <AssemblyTitle>Serilog.Sinks.MySQL</AssemblyTitle>
+        <Authors>Saleem Mirza</Authors>
+        <AssemblyName>Serilog.Sinks.MySQL</AssemblyName>
+        <Description>Serilog event sink that writes to MySQL database</Description>
+        <PackageId>Serilog.Sinks.MySQL</PackageId>
+        <PackageTags>serilog;logging;MySQL</PackageTags>
+        <PackageIconUrl>http://serilog.net/images/serilog-sink-nuget.png</PackageIconUrl>
+        <PackageProjectUrl>http://serilog.net</PackageProjectUrl>
+        <PackageLicenseUrl>http://www.apache.org/licenses/LICENSE-2.0</PackageLicenseUrl>
+        <RepositoryUrl>https://github.com/saleem-mirza/serilog-sinks-mysql</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        <Copyright>Copyright © Zethian Inc. 2013-2018</Copyright>
+        <AssemblyVersion>3.2.0.0</AssemblyVersion>
+        <Version>3.2.0</Version>
+        <SignAssembly>True</SignAssembly>
+        <AssemblyOriginatorKeyFile>Serilog.snk</AssemblyOriginatorKeyFile>
+        <TargetFrameworks>netstandard1.6;net452;netcoreapp2.1</TargetFrameworks>
+    </PropertyGroup>
 
-  <PropertyGroup Condition="'$(VersionSuffix)'!='' ">
-    <Version>$(Version)-$(VersionSuffix)</Version>
-  </PropertyGroup>
-  
-  <ItemGroup>
-    <PackageReference Include="Microsoft.CSharp" Version="4.5.0" />      
-    <PackageReference Include="MySql.Data" Version="8.0.12" />
-    <PackageReference Include="Newtonsoft.Json" Version="11.0.2" />
-    <PackageReference Include="Serilog" Version="2.7.1" />
-    <PackageReference Include="System.Data.Common" Version="4.3.0" />
-  </ItemGroup>
+    <PropertyGroup Condition="'$(VersionSuffix)'!='' ">
+        <Version>$(Version)-$(VersionSuffix)</Version>
+    </PropertyGroup>
 
-  <ItemGroup>
-    <Folder Include="Properties\" />
-  </ItemGroup>
+    <ItemGroup>
+        <PackageReference Include="Microsoft.CSharp" Version="4.5.0"/>
+        <PackageReference Include="MySql.Data" Version="8.0.12"/>
+        <PackageReference Include="Newtonsoft.Json" Version="11.0.2"/>
+        <PackageReference Include="Serilog" Version="2.7.1"/>
+        <PackageReference Include="System.Data.Common" Version="4.3.0"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <Folder Include="Properties\"/>
+    </ItemGroup>
 
 </Project>
