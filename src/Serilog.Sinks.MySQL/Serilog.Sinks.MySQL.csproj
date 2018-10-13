@@ -13,11 +13,11 @@
         <RepositoryUrl>https://github.com/saleem-mirza/serilog-sinks-mysql</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
         <Copyright>Copyright © Zethian Inc. 2013-2018</Copyright>
-        <AssemblyVersion>3.2.0.0</AssemblyVersion>
-        <Version>3.2.0</Version>
+        <AssemblyVersion>4.0.0.0</AssemblyVersion>
+        <Version>4.0.0</Version>
         <SignAssembly>True</SignAssembly>
         <AssemblyOriginatorKeyFile>Serilog.snk</AssemblyOriginatorKeyFile>
-        <TargetFrameworks>netstandard1.6;net452;netcoreapp2.1</TargetFrameworks>
+        <TargetFrameworks>netstandard1.6;net452;netstandard2;netcoreapp2.1</TargetFrameworks>
     </PropertyGroup>
 
     <PropertyGroup Condition="'$(VersionSuffix)'!='' ">
