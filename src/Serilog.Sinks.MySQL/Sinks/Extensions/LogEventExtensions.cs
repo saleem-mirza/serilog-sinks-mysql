@@ -1,4 +1,4 @@
-﻿// Copyright 2016 Zethian Inc.
+﻿// Copyright 2019 Zethian Inc.
 // 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -28,7 +28,8 @@ namespace Serilog.Sinks.Extensions
             return JsonConvert.SerializeObject(ConvertToDictionary(logEvent, storeTimestampInUtc));
         }
 
-        internal static IDictionary<string, object> Dictionary(this LogEvent logEvent,
+        internal static IDictionary<string, object> Dictionary(
+            this LogEvent logEvent,
             bool storeTimestampInUtc = false,
             IFormatProvider formatProvider = null)
         {
@@ -53,17 +54,21 @@ namespace Serilog.Sinks.Extensions
             var expObject = new ExpandoObject() as IDictionary<string, object>;
             foreach (var property in properties)
                 expObject.Add(property.Key, Simplify(property.Value));
+
             return expObject;
         }
 
-        private static dynamic ConvertToDictionary(LogEvent logEvent,
+        private static dynamic ConvertToDictionary(
+            LogEvent logEvent,
             bool storeTimestampInUtc,
             IFormatProvider formatProvider = null)
         {
             var eventObject = new ExpandoObject() as IDictionary<string, object>;
-            eventObject.Add("Timestamp", storeTimestampInUtc
-                ? logEvent.Timestamp.ToUniversalTime().ToString("o")
-                : logEvent.Timestamp.ToString("o"));
+            eventObject.Add(
+                "Timestamp",
+                storeTimestampInUtc
+                    ? logEvent.Timestamp.ToUniversalTime().ToString("o")
+                    : logEvent.Timestamp.ToString("o"));
 
             eventObject.Add("LogLevel", logEvent.Level.ToString());
             eventObject.Add("LogMessage", logEvent.RenderMessage(formatProvider));
@@ -76,28 +81,32 @@ namespace Serilog.Sinks.Extensions
         private static object Simplify(LogEventPropertyValue data)
         {
             var value = data as ScalarValue;
+
             if (value != null)
                 return value.Value;
 
             // ReSharper disable once SuspiciousTypeConversion.Global
             var dictValue = data as IReadOnlyDictionary<string, LogEventPropertyValue>;
-            if (dictValue != null)
-            {
+            if (dictValue != null) {
                 var expObject = new ExpandoObject() as IDictionary<string, object>;
                 foreach (var item in dictValue.Keys)
                     expObject.Add(item, Simplify(dictValue[item]));
+
                 return expObject;
             }
 
             var seq = data as SequenceValue;
+
             if (seq != null)
                 return seq.Elements.Select(Simplify).ToArray();
 
             var str = data as StructureValue;
-            if (str == null) return null;
+
+            if (str == null)
+                return null;
+
             {
-                try
-                {
+                try {
                     if (str.TypeTag == null)
                         return str.Properties.ToDictionary(p => p.Name, p => Simplify(p.Value));
 
@@ -105,15 +114,16 @@ namespace Serilog.Sinks.Extensions
                         return str.Properties.ToDictionary(p => p.Name, p => Simplify(p.Value));
 
                     var key = Simplify(str.Properties[0].Value);
+
                     if (key == null)
                         return null;
 
                     var expObject = new ExpandoObject() as IDictionary<string, object>;
                     expObject.Add(key.ToString(), Simplify(str.Properties[1].Value));
+
                     return expObject;
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) {
                     Console.WriteLine(ex.Message);
                 }
             }
