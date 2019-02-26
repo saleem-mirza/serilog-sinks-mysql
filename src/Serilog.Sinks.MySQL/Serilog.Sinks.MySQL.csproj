@@ -9,7 +9,7 @@
         <PackageTags>serilog;logging;MySQL</PackageTags>
         <PackageIconUrl>http://serilog.net/images/serilog-sink-nuget.png</PackageIconUrl>
         <PackageProjectUrl>http://serilog.net</PackageProjectUrl>
-        <PackageLicenseUrl>http://www.apache.org/licenses/LICENSE-2.0</PackageLicenseUrl>
+        <PackageLicense>http://www.apache.org/licenses/LICENSE-2.0</PackageLicense>
         <RepositoryUrl>https://github.com/saleem-mirza/serilog-sinks-mysql</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
         <Copyright>Copyright © Zethian Inc. 2013-2018</Copyright>
