@@ -71,6 +71,7 @@ namespace Serilog.Sinks.Extensions
                     : logEvent.Timestamp.ToString("o"));
 
             eventObject.Add("LogLevel", logEvent.Level.ToString());
+            eventObject.Add("LogMessageTemplate", logEvent.MessageTemplate.Text);
             eventObject.Add("LogMessage", logEvent.RenderMessage(formatProvider));
             eventObject.Add("LogException", logEvent.Exception);
             eventObject.Add("LogProperties", logEvent.Properties.Dictionary());
@@ -80,29 +81,24 @@ namespace Serilog.Sinks.Extensions
 
         private static object Simplify(LogEventPropertyValue data)
         {
-            var value = data as ScalarValue;
-
-            if (value != null)
+            if (data is ScalarValue value)
                 return value.Value;
 
             // ReSharper disable once SuspiciousTypeConversion.Global
-            var dictValue = data as IReadOnlyDictionary<string, LogEventPropertyValue>;
-            if (dictValue != null) {
+            if (data is DictionaryValue dictValue) {
                 var expObject = new ExpandoObject() as IDictionary<string, object>;
-                foreach (var item in dictValue.Keys)
-                    expObject.Add(item, Simplify(dictValue[item]));
+                foreach (var item in dictValue.Elements) {
+                    if (item.Key.Value is string key)
+                        expObject.Add(key, Simplify(item.Value));
+                }
 
                 return expObject;
             }
 
-            var seq = data as SequenceValue;
-
-            if (seq != null)
+            if (data is SequenceValue seq)
                 return seq.Elements.Select(Simplify).ToArray();
 
-            var str = data as StructureValue;
-
-            if (str == null)
+            if (!(data is StructureValue str))
                 return null;
 
             {
