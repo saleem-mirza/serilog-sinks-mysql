@@ -31,7 +31,9 @@ namespace Serilog
         /// </summary>
         /// <param name="loggerConfiguration">The logger configuration.</param>
         /// <param name="connectionString">The connection string to MySQL database.</param>
-        /// <param name="tableName">The name of the MySQL table to store log.</param>
+        /// <param name="tableName">The name of the MySQL table to store log,can use date like log_{0:yyyyMM}.</param>
+        /// <param name="insertSql">The insert sql text with tableName:"INSERT INTO {0} (Timestamp,...".</param>
+        /// <param name="createTable">The create table sql text with tableName:"CREATE TABLE `{0}`...".</param>
         /// <param name="restrictedToMinimumLevel">The minimum log event level required in order to write an event to the sink.</param>
         /// <param name="storeTimestampInUtc">Store timestamp in UTC format</param>
         /// <param name="batchSize">Number of log messages to be sent as batch. Supported range is between 1 and 1000</param>
@@ -43,6 +45,8 @@ namespace Serilog
             this LoggerSinkConfiguration loggerConfiguration,
             string connectionString,
             string tableName = "Logs",
+            string insertSql = "",
+            string createTable = "",
             LogEventLevel restrictedToMinimumLevel = LevelAlias.Minimum,
             bool storeTimestampInUtc = false,
             uint batchSize = 100,
@@ -57,13 +61,15 @@ namespace Serilog
             if (batchSize < 1 || batchSize > 1000)
                 throw new ArgumentOutOfRangeException("[batchSize] argument must be between 1 and 1000 inclusive");
 
-            try {
+            try
+            {
                 return loggerConfiguration.Sink(
-                    new MySqlSink(connectionString, tableName, storeTimestampInUtc, batchSize),
+                    new MySqlSink(connectionString, tableName, insertSql, createTable, storeTimestampInUtc, batchSize),
                     restrictedToMinimumLevel,
                     levelSwitch);
             }
-            catch (Exception ex) {
+            catch (Exception ex)
+            {
                 SelfLog.WriteLine(ex.Message);
 
                 throw;
