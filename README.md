@@ -50,7 +50,3 @@ This sink version 4.1 has breaking changes. It expects an additional column `Tem
 It is recommended to add this column manually or delete existing table so that it can be recreated correctly. 
 
 [![Build status](https://ci.appveyor.com/api/projects/status/tse5g3weca5nmky3?svg=true)](https://ci.appveyor.com/project/SaleemMirza/serilog-sinks-mysql)
-
----
-
-Many thanks to the [<img src="resources/jetbrains.svg" width="100px"/>](https://www.jetbrains.com "JetBrains") for donating awesome suite of tools making this project possible.
