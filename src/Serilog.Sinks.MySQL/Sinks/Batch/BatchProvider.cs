@@ -52,7 +52,7 @@ namespace Serilog.Sinks.Batch
             _batchEventsCollection = new BlockingCollection<IList<LogEvent>>();
             _eventsCollection      = new BlockingCollection<LogEvent>(maxBufferSize);
 
-            _batchTask     = Task.Factory.StartNew(PumpAsync, TaskCreationOptions.LongRunning);
+            _batchTask     = Task.Factory.StartNew(PumpAsync, TaskCreationOptions.LongRunning).Unwrap();
             _timerTask     = Task.Factory.StartNew(TimerPump, TaskCreationOptions.LongRunning);
             _eventPumpTask = Task.Factory.StartNew(EventPump, TaskCreationOptions.LongRunning);
         }
