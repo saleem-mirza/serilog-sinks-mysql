@@ -1,28 +1,41 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <AssemblyTitle>Serilog.Sinks.MySQL</AssemblyTitle>
-        <Authors>Saleem Mirza</Authors>
-        <AssemblyName>Serilog.Sinks.MySQL</AssemblyName>
-        <Description>Serilog event sink that writes to MySQL database</Description>
-        <PackageId>Serilog.Sinks.MySQL</PackageId>
-        <PackageTags>serilog;logging;MySQL</PackageTags>
-        <PackageIconUrl>http://serilog.net/images/serilog-sink-nuget.png</PackageIconUrl>
-        <PackageProjectUrl>http://serilog.net</PackageProjectUrl>
-        <RepositoryUrl>https://github.com/saleem-mirza/serilog-sinks-mysql</RepositoryUrl>
+        <AssemblyTitle>Soufleuse.Sinks.MySQL</AssemblyTitle>
+        <Authors>
+        Saleem Mirza
+        Steve Lemieux
+        </Authors>
+        <AssemblyName>Soufleuse.Sinks.MySQL</AssemblyName>
+        <Description>
+            Fork from https://github.com/saleem-mirza/serilog-sinks-mysql.
+            Serilog event sink that writes to MySQL database.
+            Built for netstandard2.0/net8.0
+        </Description>
+        <PackageId>Soufleuse.Sinks.MySQL</PackageId>
+        <PackageTags>serilog;logging;MySQL;Soufleuse</PackageTags>
+        <PackageIcon>serilog-sink-nuget.png</PackageIcon>
+        <RepositoryUrl>https://github.com/Soufleuse/serilog-sinks-mysql</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
-        <Copyright>Copyright © Zethian Inc. 2022-2023</Copyright>
-        <AssemblyVersion>5.0.0.0</AssemblyVersion>
-        <Version>5.0.0</Version>
+        <Copyright>
+            Copyright © Zethian Inc. 2022-2023
+            Copyright © Steve Lemieux 2026
+        </Copyright>
+        <AssemblyVersion>6.0.0.0</AssemblyVersion>
+        <Version>6.0.0</Version>
         <SignAssembly>True</SignAssembly>
         <AssemblyOriginatorKeyFile>Serilog.snk</AssemblyOriginatorKeyFile>
-        <TargetFrameworks>netstandard2.0;net7.0</TargetFrameworks>
+        <TargetFrameworks>netstandard2.0;net8.0</TargetFrameworks>
     </PropertyGroup>
     <PropertyGroup>
         <PackageLicenseFile>LICENSE</PackageLicenseFile>
     </PropertyGroup>
     <ItemGroup>
         <None Include="..\..\LICENSE">
+            <Pack>true</Pack>
+            <PackagePath></PackagePath>
+        </None>
+        <None Include="..\images\serilog-sink-nuget.png">
             <Pack>true</Pack>
             <PackagePath></PackagePath>
         </None>
@@ -33,7 +46,7 @@
 
     <ItemGroup>
         <PackageReference Include="Microsoft.CSharp" Version="4.7.0" />
-        <PackageReference Include="MySql.Data" Version="8.0.33" />
+        <PackageReference Include="MySqlConnector" Version="2.5.0" />
         <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
         <PackageReference Include="Serilog" Version="2.12.0" />
         <PackageReference Include="System.Data.Common" Version="4.3.0" />

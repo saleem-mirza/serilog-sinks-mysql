@@ -1,12 +1,13 @@
-# Serilog.Sinks.MySQL
+# Soufleuse.Sinks.MySQL
 Serilog sink that writes to MySQL database.
+Fork from https://github.com/saleem-mirza/serilog-sinks-mysql.
 
 ## Getting started
 
-Install [Serilog.Sinks.MySQL](https://www.nuget.org/packages/Serilog.Sinks.MySQL) from NuGet
+Install [Soufleuse.Sinks.MySQL](https://www.nuget.org/packages/Soufleuse.Sinks.MySQL) from NuGet
 
 ```PowerShell
-Install-Package Serilog.Sinks.MySQL
+Install-Package Soufleuse.Sinks.MySQL
 ```
 
 Configure logger by calling WriteTo.MySQL
@@ -46,7 +47,5 @@ In your application's App.config or Web.config file, specify the MySQL sink asse
 ```
 
 >Note:
-This sink version 4.1 has breaking changes. It expects an additional column `Template` of type Template `TEXT` in log table.
-It is recommended to add this column manually or delete existing table so that it can be recreated correctly. 
-
-[![Build status](https://ci.appveyor.com/api/projects/status/tse5g3weca5nmky3?svg=true)](https://ci.appveyor.com/project/SaleemMirza/serilog-sinks-mysql)
+This has been simply ported to netstandard2.0/.net8.0 with a change from MySQL.Data to MysqlConnector
+to get rid from most of Windows dependencies, especially System.Drawing.Common.
