@@ -42,8 +42,10 @@ namespace Serilog.Sinks.MySQL
             _tableName           = tableName;
             _storeTimestampInUtc = storeTimestampInUtc;
 
-            var sqlConnection = GetSqlConnection();
-            CreateTable(sqlConnection);
+            using (var sqlConnection = GetSqlConnection())
+            {
+                CreateTable(sqlConnection);
+            }
         }
 
         public void Emit(LogEvent logEvent)
@@ -69,7 +71,7 @@ namespace Serilog.Sinks.MySQL
         private MySqlCommand GetInsertCommand(MySqlConnection sqlConnection)
         {
             var tableCommandBuilder = new StringBuilder();
-            tableCommandBuilder.Append($"INSERT INTO  {_tableName} (");
+            tableCommandBuilder.Append($"INSERT INTO `{_tableName.Replace("`", "``")}` (");
             tableCommandBuilder.Append("Timestamp, Level, Template, Message, Exception, Properties) ");
             tableCommandBuilder.Append("VALUES (@ts, @level,@template, @msg, @ex, @prop)");
 
@@ -90,7 +92,7 @@ namespace Serilog.Sinks.MySQL
         {
             try {
                 var tableCommandBuilder = new StringBuilder();
-                tableCommandBuilder.Append($"CREATE TABLE IF NOT EXISTS {_tableName} (");
+                tableCommandBuilder.Append($"CREATE TABLE IF NOT EXISTS `{_tableName.Replace("`", "``")}` (");
                 tableCommandBuilder.Append("id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,");
                 tableCommandBuilder.Append("Timestamp VARCHAR(100),");
                 tableCommandBuilder.Append("Level VARCHAR(15),");
@@ -127,11 +129,11 @@ namespace Serilog.Sinks.MySQL
 
                             insertCommand.Parameters["@level"].Value     = logEvent.Level.ToString();
                             insertCommand.Parameters["@template"].Value = logEvent.MessageTemplate.ToString();
-                            insertCommand.Parameters["@msg"].Value      = logMessageString;
+                            insertCommand.Parameters["@msg"].Value      = logMessageString.ToString();
                             insertCommand.Parameters["@ex"].Value       = logEvent.Exception?.ToString();
                             insertCommand.Parameters["@prop"].Value = logEvent.Properties.Count > 0
-                                ? logEvent.Properties.Json()
-                                : string.Empty;
+                                ? (object)logEvent.Properties.Json()
+                                : DBNull.Value;
 
                             await insertCommand.ExecuteNonQueryAsync().ConfigureAwait(false);
                         }

@@ -17,6 +17,7 @@ using System.Collections.Generic;
 using System.Dynamic;
 using System.Linq;
 using Newtonsoft.Json;
+using Serilog.Debugging;
 using Serilog.Events;
 
 namespace Serilog.Sinks.Extensions
@@ -120,7 +121,7 @@ namespace Serilog.Sinks.Extensions
                     return expObject;
                 }
                 catch (Exception ex) {
-                    Console.WriteLine(ex.Message);
+                    SelfLog.WriteLine(ex.Message);
                 }
             }
 

@@ -17,7 +17,6 @@ using Serilog.Events;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -28,6 +27,7 @@ namespace Serilog.Sinks.Batch
         private const int MaxSupportedBufferSize = 100_000;
         private const int MaxSupportedBatchSize = 1_000;
         private int _numMessages;
+        private int _droppedCount;
         private bool _canStop;
         private readonly int _maxBufferSize;
         private readonly int _batchSize;
@@ -52,7 +52,10 @@ namespace Serilog.Sinks.Batch
             _batchEventsCollection = new BlockingCollection<IList<LogEvent>>();
             _eventsCollection      = new BlockingCollection<LogEvent>(maxBufferSize);
 
-            _batchTask     = Task.Factory.StartNew(PumpAsync, TaskCreationOptions.LongRunning);
+            // Unwrap() is required: StartNew(asyncMethod) returns Task<Task>.
+            // Without Unwrap(), Wait() on _batchTask returns the moment PumpAsync
+            // first yields — before any writes have happened.
+            _batchTask     = Task.Factory.StartNew(PumpAsync, TaskCreationOptions.LongRunning).Unwrap();
             _timerTask     = Task.Factory.StartNew(TimerPump, TaskCreationOptions.LongRunning);
             _eventPumpTask = Task.Factory.StartNew(EventPump, TaskCreationOptions.LongRunning);
         }
@@ -119,15 +122,17 @@ namespace Serilog.Sinks.Batch
 
         private void FlushLogEventBatch()
         {
+            var acquired = false;
             try {
                 _semaphoreSlim.Wait(_cancellationTokenSource.Token);
+                acquired = true;
 
-                if (!_logEventBatch.Any()) {
+                if (_logEventBatch.IsEmpty) {
                     return;
                 }
 
                 var logEventBatchSize = _logEventBatch.Count >= _batchSize ? _batchSize : _logEventBatch.Count;
-                var logEventList = new List<LogEvent>();
+                var logEventList = new List<LogEvent>(logEventBatchSize);
 
                 for (var i = 0; i < logEventBatchSize; i++) {
                     if (_logEventBatch.TryDequeue(out LogEvent logEvent)) {
@@ -142,7 +147,7 @@ namespace Serilog.Sinks.Batch
             catch (InvalidOperationException) { }
             catch (OperationCanceledException) { }
             finally {
-                if (!_cancellationTokenSource.IsCancellationRequested) {
+                if (acquired) {
                     _semaphoreSlim.Release();
                 }
             }
@@ -150,8 +155,12 @@ namespace Serilog.Sinks.Batch
 
         protected void PushEvent(LogEvent logEvent)
         {
-            if (_numMessages > _maxBufferSize)
+            if (_numMessages > _maxBufferSize) {
+                var dropped = Interlocked.Increment(ref _droppedCount);
+                if (dropped == 1 || dropped % 1000 == 0)
+                    SelfLog.WriteLine($"Buffer full ({_maxBufferSize}); {dropped} events dropped so far.");
                 return;
+            }
 
             if (_eventsCollection.IsAddingCompleted)
                 return;
@@ -188,32 +197,23 @@ namespace Serilog.Sinks.Batch
 
                 _canStop = true;
                 _timerResetEvent.Set();
+
+                // Signal EventPump to stop accepting new events and let it drain itself.
+                // The disposing thread must NOT also drain _eventsCollection — that races
+                // with EventPump and can leave items orphaned in _logEventBatch.
                 _eventsCollection.CompleteAdding();
+                _eventPumpTask.Wait(TimeSpan.FromSeconds(60));
 
-                // Flush events collection
-                while (!_eventsCollection.IsCompleted) {
-                    var logEvent = _eventsCollection.Take();
-                    _logEventBatch.Enqueue(logEvent);
-                    if (_logEventBatch.Count >= _batchSize) {
-                        FlushLogEventBatch();
-                    }
-                }
-
+                // EventPump has exited; flush any partial batch it left in _logEventBatch.
                 FlushLogEventBatch();
 
+                // Signal PumpAsync to stop and let it drain _batchEventsCollection itself.
                 _batchEventsCollection.CompleteAdding();
+                _batchTask.Wait(TimeSpan.FromSeconds(60));
+                _timerTask.Wait(TimeSpan.FromSeconds(60));
 
-                // request cancellation of all tasks
+                // Cancel releases any tasks still parked on a blocking wait (no-op otherwise).
                 _cancellationTokenSource.Cancel();
-
-                // Flush events batch
-                while (!_batchEventsCollection.IsCompleted) {
-                    var eventBatch = _batchEventsCollection.Take();
-                    WriteLogEventAsync(eventBatch).GetAwaiter().GetResult();
-                    SelfLog.WriteLine($"Sending batch of {eventBatch.Count} logs");
-                }
-
-                Task.WaitAll(new[] {_eventPumpTask, _batchTask, _timerTask}, TimeSpan.FromSeconds(60));
             }
             catch (Exception ex) {
                 SelfLog.WriteLine(ex.Message);
