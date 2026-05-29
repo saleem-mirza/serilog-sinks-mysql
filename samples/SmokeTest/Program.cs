@@ -9,19 +9,24 @@ namespace SmokeTest;
 
 internal static class Program
 {
-    private const string Server   = "localhost";
-    private const int    Port     = 3306;
-    private const string User     = "root";
-    private const string Password = "P@ssword";
-    private const string Database = "serilog_smoketest";
-
-    private static readonly string ConnectionString =
-        $"Server={Server};Port={Port};Database={Database};Uid={User};Pwd={Password};" +
-        "AllowPublicKeyRetrieval=True;SslMode=None;";
+    private static string ConnectionString;
 
     private static int Main()
     {
-        if (!EnsureDatabase()) return 1;
+        Console.WriteLine("=== Serilog MySQL Sink Smoke Test ===");
+        Console.WriteLine("Press Enter to accept the default value shown in [brackets].\n");
+
+        var server   = Prompt("Server",   "localhost");
+        var port     = Prompt("Port",     "3306");
+        var database = Prompt("Database", "serilog_smoketest");
+        var user     = Prompt("Username", "root");
+        var password = PromptPassword("Password", "P@ssword");
+
+        ConnectionString =
+            $"Server={server};Port={port};Database={database};Uid={user};Pwd={password};" +
+            "AllowPublicKeyRetrieval=True;SslMode=None;";
+
+        if (!EnsureDatabase(server, port, database, user, password)) return 1;
 
         var scenarios = new (string Name, Func<bool> Run)[]
         {
@@ -400,18 +405,62 @@ internal static class Program
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
-    private static bool EnsureDatabase()
+    private static string Prompt(string label, string defaultValue)
+    {
+        Console.Write($"  {label} [{defaultValue}]: ");
+        var input = Console.ReadLine()?.Trim();
+        return string.IsNullOrEmpty(input) ? defaultValue : input;
+    }
+
+    private static string PromptPassword(string label, string defaultValue)
+    {
+        Console.Write($"  {label} [{new string('*', defaultValue.Length)}]: ");
+
+        if (Console.IsInputRedirected)
+        {
+            var line = Console.ReadLine()?.Trim();
+            return string.IsNullOrEmpty(line) ? defaultValue : line;
+        }
+
+        var input = new System.Text.StringBuilder();
+        while (true)
+        {
+            var key = Console.ReadKey(intercept: true);
+            if (key.Key == ConsoleKey.Enter)
+            {
+                Console.WriteLine();
+                break;
+            }
+            if (key.Key == ConsoleKey.Backspace)
+            {
+                if (input.Length > 0)
+                {
+                    input.Remove(input.Length - 1, 1);
+                    Console.Write("\b \b");
+                }
+            }
+            else if (!char.IsControl(key.KeyChar))
+            {
+                input.Append(key.KeyChar);
+                Console.Write('*');
+            }
+        }
+        var entered = input.ToString();
+        return string.IsNullOrEmpty(entered) ? defaultValue : entered;
+    }
+
+    private static bool EnsureDatabase(string server, string port, string database, string user, string password)
     {
         try
         {
-            var adminCs = $"Server={Server};Port={Port};Uid={User};Pwd={Password};" +
+            var adminCs = $"Server={server};Port={port};Uid={user};Pwd={password};" +
                           "AllowPublicKeyRetrieval=True;SslMode=None;";
             using var conn = new MySqlConnection(adminCs);
             conn.Open();
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = $"CREATE DATABASE IF NOT EXISTS `{Database}`";
+            cmd.CommandText = $"CREATE DATABASE IF NOT EXISTS `{database}`";
             cmd.ExecuteNonQuery();
-            Console.WriteLine($"OK   database '{Database}' ready");
+            Console.WriteLine($"\nOK   database '{database}' ready");
             return true;
         }
         catch (Exception ex)
