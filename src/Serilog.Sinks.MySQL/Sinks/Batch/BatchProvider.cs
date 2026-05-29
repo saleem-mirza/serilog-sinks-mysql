@@ -1,11 +1,11 @@
-﻿// Copyright 2019 Zethian Inc.
-// 
+// Copyright 2019 Zethian Inc.
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// 
+//
 //     http://www.apache.org/licenses/LICENSE-2.0
-// 
+//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -50,7 +50,7 @@ namespace Serilog.Sinks.Batch
 
             _logEventBatch         = new ConcurrentQueue<LogEvent>();
             _batchEventsCollection = new BlockingCollection<IList<LogEvent>>();
-            _eventsCollection      = new BlockingCollection<LogEvent>(maxBufferSize);
+            _eventsCollection      = new BlockingCollection<LogEvent>();
 
             // Unwrap() is required: StartNew(asyncMethod) returns Task<Task>.
             // Without Unwrap(), Wait() on _batchTask returns the moment PumpAsync
@@ -140,7 +140,7 @@ namespace Serilog.Sinks.Batch
                     }
                 }
 
-                if (!_batchEventsCollection.IsAddingCompleted) {
+                if (logEventList.Count > 0 && !_batchEventsCollection.IsAddingCompleted) {
                     _batchEventsCollection.Add(logEventList);
                 }
             }
@@ -162,10 +162,9 @@ namespace Serilog.Sinks.Batch
                 return;
             }
 
-            if (_eventsCollection.IsAddingCompleted)
+            if (!_eventsCollection.TryAdd(logEvent))
                 return;
 
-            _eventsCollection.Add(logEvent);
             Interlocked.Increment(ref _numMessages);
         }
 
@@ -173,7 +172,7 @@ namespace Serilog.Sinks.Batch
 
         #region IDisposable Support
 
-        private bool _disposedValue; // To detect redundant calls
+        private bool _disposedValue;
 
         protected virtual void Dispose(bool disposing)
         {
@@ -183,6 +182,10 @@ namespace Serilog.Sinks.Batch
             if (disposing) {
                 FlushAndCloseEventHandlers();
                 _semaphoreSlim.Dispose();
+                _cancellationTokenSource.Dispose();
+                _timerResetEvent.Dispose();
+                _eventsCollection.Dispose();
+                _batchEventsCollection.Dispose();
 
                 SelfLog.WriteLine("Sink halted successfully.");
             }

@@ -1,11 +1,11 @@
-﻿// Copyright 2019 Zethian Inc.
-// 
+// Copyright 2019 Zethian Inc.
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// 
+//
 //     http://www.apache.org/licenses/LICENSE-2.0
-// 
+//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -14,7 +14,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Text;
 using System.Threading.Tasks;
 using MySql.Data.MySqlClient;
@@ -73,17 +72,17 @@ namespace Serilog.Sinks.MySQL
             var tableCommandBuilder = new StringBuilder();
             tableCommandBuilder.Append($"INSERT INTO `{_tableName.Replace("`", "``")}` (");
             tableCommandBuilder.Append("Timestamp, Level, Template, Message, Exception, Properties) ");
-            tableCommandBuilder.Append("VALUES (@ts, @level,@template, @msg, @ex, @prop)");
+            tableCommandBuilder.Append("VALUES (@ts, @level, @template, @msg, @ex, @prop)");
 
             var cmd = sqlConnection.CreateCommand();
             cmd.CommandText = tableCommandBuilder.ToString();
 
-            cmd.Parameters.Add(new MySqlParameter("@ts", MySqlDbType.VarChar));
-            cmd.Parameters.Add(new MySqlParameter("@level", MySqlDbType.VarChar));
-            cmd.Parameters.Add(new MySqlParameter("@template", MySqlDbType.VarChar));
-            cmd.Parameters.Add(new MySqlParameter("@msg", MySqlDbType.VarChar));
-            cmd.Parameters.Add(new MySqlParameter("@ex", MySqlDbType.VarChar));
-            cmd.Parameters.Add(new MySqlParameter("@prop", MySqlDbType.VarChar));
+            cmd.Parameters.Add(new MySqlParameter("@ts",       MySqlDbType.VarChar));
+            cmd.Parameters.Add(new MySqlParameter("@level",    MySqlDbType.VarChar));
+            cmd.Parameters.Add(new MySqlParameter("@template", MySqlDbType.Text));
+            cmd.Parameters.Add(new MySqlParameter("@msg",      MySqlDbType.Text));
+            cmd.Parameters.Add(new MySqlParameter("@ex",       MySqlDbType.Text));
+            cmd.Parameters.Add(new MySqlParameter("@prop",     MySqlDbType.Text));
 
             return cmd;
         }
@@ -116,31 +115,28 @@ namespace Serilog.Sinks.MySQL
             try {
                 using (var sqlCon = GetSqlConnection()) {
                     using (var tr = await sqlCon.BeginTransactionAsync().ConfigureAwait(false)) {
-                        var insertCommand = GetInsertCommand(sqlCon);
-                        insertCommand.Transaction = tr;
+                        using (var insertCommand = GetInsertCommand(sqlCon)) {
+                            insertCommand.Transaction = tr;
 
-                        foreach (var logEvent in logEventsBatch) {
-                            var logMessageString = new StringWriter(new StringBuilder());
-                            logEvent.RenderMessage(logMessageString);
+                            foreach (var logEvent in logEventsBatch) {
+                                insertCommand.Parameters["@ts"].Value = _storeTimestampInUtc
+                                    ? logEvent.Timestamp.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss.fffzzz")
+                                    : logEvent.Timestamp.ToString("yyyy-MM-dd HH:mm:ss.fffzzz");
 
-                            insertCommand.Parameters["@ts"].Value = _storeTimestampInUtc
-                                ? logEvent.Timestamp.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss.fffzzz")
-                                : logEvent.Timestamp.ToString("yyyy-MM-dd HH:mm:ss.fffzzz");
+                                insertCommand.Parameters["@level"].Value    = logEvent.Level.ToString();
+                                insertCommand.Parameters["@template"].Value = logEvent.MessageTemplate.ToString();
+                                insertCommand.Parameters["@msg"].Value      = logEvent.RenderMessage();
+                                insertCommand.Parameters["@ex"].Value       = (object)logEvent.Exception?.ToString() ?? DBNull.Value;
+                                insertCommand.Parameters["@prop"].Value     = logEvent.Properties.Count > 0
+                                    ? (object)logEvent.Properties.Json()
+                                    : DBNull.Value;
 
-                            insertCommand.Parameters["@level"].Value     = logEvent.Level.ToString();
-                            insertCommand.Parameters["@template"].Value = logEvent.MessageTemplate.ToString();
-                            insertCommand.Parameters["@msg"].Value      = logMessageString.ToString();
-                            insertCommand.Parameters["@ex"].Value       = logEvent.Exception?.ToString();
-                            insertCommand.Parameters["@prop"].Value = logEvent.Properties.Count > 0
-                                ? (object)logEvent.Properties.Json()
-                                : DBNull.Value;
+                                await insertCommand.ExecuteNonQueryAsync().ConfigureAwait(false);
+                            }
 
-                            await insertCommand.ExecuteNonQueryAsync().ConfigureAwait(false);
+                            await tr.CommitAsync().ConfigureAwait(false);
+                            return true;
                         }
-
-                        tr.Commit();
-
-                        return true;
                     }
                 }
             }

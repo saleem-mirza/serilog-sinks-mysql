@@ -91,7 +91,8 @@ namespace Serilog.Sinks.Extensions
             if (data is DictionaryValue dictValue) {
                 var dict = new Dictionary<string, object>(dictValue.Elements.Count);
                 foreach (var item in dictValue.Elements) {
-                    if (item.Key.Value is string key)
+                    var key = item.Key.Value?.ToString();
+                    if (key != null)
                         dict[key] = Simplify(item.Value);
                 }
 
@@ -111,6 +112,9 @@ namespace Serilog.Sinks.Extensions
 
                     if (!str.TypeTag.StartsWith("DictionaryEntry") && !str.TypeTag.StartsWith("KeyValuePair"))
                         return str.Properties.ToDictionary(p => p.Name, p => Simplify(p.Value));
+
+                    if (str.Properties.Count < 2)
+                        return null;
 
                     var key = Simplify(str.Properties[0].Value);
 
