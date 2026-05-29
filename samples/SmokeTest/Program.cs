@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 using MySql.Data.MySqlClient;
 using Serilog;
 
@@ -27,6 +29,11 @@ internal static class Program
             ("table-name-quoting",  TableNameQuoting),
             ("connection-disposal", ConnectionDisposal),
             ("stress-50",           Stress50),
+            ("timer-flush",         TimerFlush),
+            ("partial-batch-dispose", PartialBatchDispose),
+            ("concurrent-emitters", ConcurrentEmitters),
+            ("high-burst",          HighBurst),
+            ("exception-column",    ExceptionColumn),
         };
 
         var allOk = true;
@@ -87,7 +94,7 @@ internal static class Program
                 if (!s.Contains("Smoke event"))      return $"Message not rendered correctly: {s}";
                 return null;
             }) &&
-            Check(conn, $"SELECT Properties FROM `{table}` WHERE Properties != '' LIMIT 1;", v =>
+            Check(conn, $"SELECT Properties FROM `{table}` WHERE Properties IS NOT NULL LIMIT 1;", v =>
             {
                 var s = v as string;
                 if (string.IsNullOrEmpty(s))    return "Properties column is empty";
@@ -219,6 +226,175 @@ internal static class Program
             Console.Error.WriteLine($"FAIL cycles: {string.Join(", ", failed)}");
 
         return failed.Count == 0;
+    }
+
+    // -------------------------------------------------------------------------
+    // Scenario 5: timer flush
+    // Emits fewer events than batchSize so EventPump never self-flushes.
+    // Waits for TimerPump (fires every 10s) to flush the partial batch.
+    // Validates the timer path — all existing scenarios use batchSize=1 or exact
+    // multiples and never exercise this code path.
+    // -------------------------------------------------------------------------
+    private static bool TimerFlush()
+    {
+        const string table     = "smoke_timer";
+        const int    batchSize = 50;
+        const int    count     = batchSize - 1;  // 49 events — EventPump never self-flushes
+        DropTable(table);
+
+        var logger = new LoggerConfiguration()
+            .WriteTo.MySQL(ConnectionString, table, batchSize: batchSize)
+            .CreateLogger();
+
+        for (var i = 0; i < count; i++)
+            logger.Information("Timer flush event {Index}", i);
+
+        // TimerPump threshold is 10s; wait 12s to give it a comfortable margin.
+        Console.WriteLine("    waiting 12s for TimerPump...");
+        Thread.Sleep(TimeSpan.FromSeconds(12));
+
+        ((IDisposable)logger).Dispose();
+
+        using var conn = OpenConnection();
+        return Check(conn, $"SELECT COUNT(*) FROM `{table}`;", v =>
+        {
+            var n = Convert.ToInt32(v);
+            return n == count ? null : $"expected {count} rows, got {n}";
+        });
+    }
+
+    // -------------------------------------------------------------------------
+    // Scenario 6: partial batch on immediate dispose
+    // Emits a non-multiple of batchSize then disposes with no delay.
+    // Exercises the FlushAndCloseEventHandlers partial-batch path directly.
+    // This is the scenario that failed before the single-writer dispose race fix.
+    // -------------------------------------------------------------------------
+    private static bool PartialBatchDispose()
+    {
+        const string table     = "smoke_partial";
+        const int    batchSize = 10;
+        const int    count     = 35;  // 3 full batches + 5 remainder
+        DropTable(table);
+
+        var logger = new LoggerConfiguration()
+            .WriteTo.MySQL(ConnectionString, table, batchSize: batchSize)
+            .CreateLogger();
+
+        for (var i = 0; i < count; i++)
+            logger.Information("Partial batch event {Index}", i);
+
+        ((IDisposable)logger).Dispose();  // immediate — no sleep
+
+        using var conn = OpenConnection();
+        return Check(conn, $"SELECT COUNT(*) FROM `{table}`;", v =>
+        {
+            var n = Convert.ToInt32(v);
+            return n == count ? null : $"expected {count} rows, got {n}";
+        });
+    }
+
+    // -------------------------------------------------------------------------
+    // Scenario 7: concurrent emitters
+    // Multiple threads emit into the same logger simultaneously.
+    // Validates PushEvent/_numMessages thread safety under contention.
+    // -------------------------------------------------------------------------
+    private static bool ConcurrentEmitters()
+    {
+        const string table     = "smoke_concurrent";
+        const int    threads   = 8;
+        const int    perThread = 500;
+        const int    total     = threads * perThread;
+        DropTable(table);
+
+        var logger = new LoggerConfiguration()
+            .WriteTo.MySQL(ConnectionString, table, batchSize: 100)
+            .CreateLogger();
+
+        var tasks = new Task[threads];
+        for (var t = 0; t < threads; t++)
+        {
+            var threadId = t;
+            tasks[t] = Task.Run(() =>
+            {
+                for (var i = 0; i < perThread; i++)
+                    logger.Information("Concurrent event thread={Thread} index={Index}", threadId, i);
+            });
+        }
+        Task.WaitAll(tasks);
+
+        ((IDisposable)logger).Dispose();
+
+        using var conn = OpenConnection();
+        return Check(conn, $"SELECT COUNT(*) FROM `{table}`;", v =>
+        {
+            var n = Convert.ToInt32(v);
+            return n == total ? null : $"expected {total} rows, got {n}";
+        });
+    }
+
+    // -------------------------------------------------------------------------
+    // Scenario 8: high burst
+    // Emits 10k events as fast as possible with a moderate batchSize.
+    // Validates no deadlocks, no hangs on dispose, and all events land
+    // (10k is well within the default 25k buffer so no drops expected).
+    // -------------------------------------------------------------------------
+    private static bool HighBurst()
+    {
+        const string table     = "smoke_burst";
+        const int    count     = 10_000;
+        const int    batchSize = 500;
+        DropTable(table);
+
+        var logger = new LoggerConfiguration()
+            .WriteTo.MySQL(ConnectionString, table, batchSize: batchSize)
+            .CreateLogger();
+
+        for (var i = 0; i < count; i++)
+            logger.Information("Burst event {Index} with {@Payload}", i, new { X = i, Y = i * 2 });
+
+        ((IDisposable)logger).Dispose();
+
+        using var conn = OpenConnection();
+        return Check(conn, $"SELECT COUNT(*) FROM `{table}`;", v =>
+        {
+            var n = Convert.ToInt32(v);
+            return n == count ? null : $"expected {count} rows, got {n}";
+        });
+    }
+
+    // -------------------------------------------------------------------------
+    // Scenario 9: exception column
+    // Validates the DBNull.Value fix for null/non-null Exception column values.
+    // Before the fix, null exceptions stored "" instead of SQL NULL so
+    // WHERE Exception IS NULL would return no rows.
+    // -------------------------------------------------------------------------
+    private static bool ExceptionColumn()
+    {
+        const string table = "smoke_exception";
+        DropTable(table);
+
+        var logger = new LoggerConfiguration()
+            .WriteTo.MySQL(ConnectionString, table, batchSize: 1)
+            .CreateLogger();
+
+        logger.Information("Event without exception");
+        logger.Error(new InvalidOperationException("test error"), "Event with exception");
+
+        ((IDisposable)logger).Dispose();
+
+        using var conn = OpenConnection();
+        return
+            Check(conn, $"SELECT COUNT(*) FROM `{table}` WHERE Exception IS NULL;", v =>
+                Convert.ToInt32(v) == 1 ? null : $"expected 1 row with NULL exception, got {v}") &&
+            Check(conn, $"SELECT COUNT(*) FROM `{table}` WHERE Exception IS NOT NULL;", v =>
+                Convert.ToInt32(v) == 1 ? null : $"expected 1 row with non-NULL exception, got {v}") &&
+            Check(conn, $"SELECT Exception FROM `{table}` WHERE Exception IS NOT NULL;", v =>
+            {
+                var s = v as string;
+                if (string.IsNullOrEmpty(s))                    return "Exception column is empty";
+                if (!s.Contains("InvalidOperationException"))   return $"unexpected exception text: {s}";
+                return null;
+            });
     }
 
     // -------------------------------------------------------------------------
