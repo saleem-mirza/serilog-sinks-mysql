@@ -14,15 +14,17 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
 
-      - name: Compute artifact name
+      - name: Compute artifact name and version suffix
         id: artifact-name
         run: |
           BRANCH="${{ github.head_ref || github.ref_name }}"
           SAFE="${BRANCH//\//-}"
           if [ "$SAFE" = "master" ]; then
             echo "name=nuget-packages" >> $GITHUB_OUTPUT
+            echo "suffix=" >> $GITHUB_OUTPUT
           else
             echo "name=nuget-packages-${SAFE}" >> $GITHUB_OUTPUT
+            echo "suffix=${SAFE}" >> $GITHUB_OUTPUT
           fi
 
       - name: Setup .NET 8
@@ -37,7 +39,10 @@ jobs:
         run: dotnet build -c Release --no-restore
 
       - name: Pack
-        run: dotnet pack src/Serilog.Sinks.MySQL/Serilog.Sinks.MySQL.csproj -c Release --no-build -o artifacts
+        run: |
+          SUFFIX="${{ steps.artifact-name.outputs.suffix }}"
+          SUFFIX_ARG=$( [ -n "$SUFFIX" ] && echo "--version-suffix $SUFFIX" || echo "" )
+          dotnet pack src/Serilog.Sinks.MySQL/Serilog.Sinks.MySQL.csproj -c Release --no-build -o artifacts $SUFFIX_ARG
 
       - name: Upload package artifact
         uses: actions/upload-artifact@v6.0.0
