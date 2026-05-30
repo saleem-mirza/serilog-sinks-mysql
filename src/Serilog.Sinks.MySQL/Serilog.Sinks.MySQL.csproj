@@ -20,6 +20,7 @@
     </PropertyGroup>
     <PropertyGroup>
         <PackageLicenseFile>LICENSE</PackageLicenseFile>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
     </PropertyGroup>
     <ItemGroup>
         <None Include="..\..\LICENSE">
@@ -30,6 +31,7 @@
             <Pack>true</Pack>
             <PackagePath></PackagePath>
         </None>
+        <None Include="..\..\README.md" Pack="true" PackagePath="\"/>
     </ItemGroup>
     <PropertyGroup Condition="'$(VersionSuffix)'!='' ">
         <Version>$(Version)-$(VersionSuffix)</Version>
