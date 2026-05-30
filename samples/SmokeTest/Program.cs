@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using MySql.Data.MySqlClient;
+using MySqlConnector;
 using Serilog;
 using Serilog.Debugging;
 
@@ -472,12 +472,15 @@ internal static class Program
     // Scenario 11: batch drop after max retries
     // Runs the full backoff cycle (5 + 10 + 20 + 40 + 60 = 135s) and verifies
     // that PumpAsync drops the batch with a clear SelfLog message and logs all
-    // five attempt messages. This test takes ~140s by design.
+    // five attempt messages. This test takes ~160s by design.
     // -------------------------------------------------------------------------
     private static bool BatchDrop()
     {
-        // 5 + 10 + 20 + 40 + 60 = 135s of delays; +5s margin for task overhead.
-        const int waitSeconds = 140;
+        // 5 + 10 + 20 + 40 + 60 = 135s of retry delays, plus the 6 write attempts
+        // themselves: each connect to the dead port costs ~Connect Timeout (2s),
+        // so ~12s on top of the delays. The drop fires at ~147s; wait 160s to clear
+        // it with margin for task/CI scheduling jitter.
+        const int waitSeconds = 160;
 
         var log = new System.Collections.Concurrent.ConcurrentQueue<string>();
         SelfLog.Enable(msg => log.Enqueue(msg));
