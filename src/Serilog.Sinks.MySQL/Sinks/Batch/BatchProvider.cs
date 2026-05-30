@@ -26,13 +26,15 @@ namespace Serilog.Sinks.Batch
     {
         private const int MaxSupportedBufferSize = 100_000;
         private const int MaxSupportedBatchSize = 1_000;
+        private const int MaxBatchRetries = 5;
+        private const double MaxRetryDelaySeconds = 60.0;
         private int _numMessages;
         private int _droppedCount;
         private bool _canStop;
         private readonly int _maxBufferSize;
         private readonly int _batchSize;
         private readonly ConcurrentQueue<LogEvent> _logEventBatch;
-        private readonly BlockingCollection<IList<LogEvent>> _batchEventsCollection;
+        private readonly BlockingCollection<(IList<LogEvent> Events, int Retries)> _batchEventsCollection;
         private readonly BlockingCollection<LogEvent> _eventsCollection;
         private readonly TimeSpan _timerThresholdSpan = TimeSpan.FromSeconds(10);
         private readonly TimeSpan _transientThresholdSpan = TimeSpan.FromSeconds(5);
@@ -49,7 +51,7 @@ namespace Serilog.Sinks.Batch
             _batchSize     = Math.Min(Math.Max(batchSize, 1), MaxSupportedBatchSize);
 
             _logEventBatch         = new ConcurrentQueue<LogEvent>();
-            _batchEventsCollection = new BlockingCollection<IList<LogEvent>>();
+            _batchEventsCollection = new BlockingCollection<(IList<LogEvent>, int)>();
             _eventsCollection      = new BlockingCollection<LogEvent>();
 
             // Unwrap() is required: StartNew(asyncMethod) returns Task<Task>.
@@ -64,20 +66,25 @@ namespace Serilog.Sinks.Batch
         {
             try {
                 while (!_batchEventsCollection.IsCompleted) {
-                    var logEvents = _batchEventsCollection.Take(_cancellationTokenSource.Token);
+                    var (logEvents, retries) = _batchEventsCollection.Take(_cancellationTokenSource.Token);
                     SelfLog.WriteLine($"Sending batch of {logEvents.Count} logs");
 
                     var retValue = await WriteLogEventAsync(logEvents).ConfigureAwait(false);
                     if (retValue) {
                         Interlocked.Add(ref _numMessages, -1 * logEvents.Count);
                     }
+                    else if (retries >= MaxBatchRetries) {
+                        SelfLog.WriteLine($"Dropping batch of {logEvents.Count} events after {MaxBatchRetries} failed attempts.");
+                        Interlocked.Add(ref _numMessages, -1 * logEvents.Count);
+                    }
                     else {
-                        SelfLog.WriteLine($"Retrying after {_transientThresholdSpan.TotalSeconds} seconds...");
+                        var delaySecs = Math.Min(_transientThresholdSpan.TotalSeconds * Math.Pow(2, retries), MaxRetryDelaySeconds);
+                        SelfLog.WriteLine($"Retrying batch in {delaySecs}s (attempt {retries + 1}/{MaxBatchRetries})...");
 
-                        await Task.Delay(_transientThresholdSpan).ConfigureAwait(false);
+                        await Task.Delay(TimeSpan.FromSeconds(delaySecs)).ConfigureAwait(false);
 
                         if (!_batchEventsCollection.IsAddingCompleted) {
-                            _batchEventsCollection.Add(logEvents);
+                            _batchEventsCollection.Add((logEvents, retries + 1));
                         }
                     }
 
@@ -141,7 +148,7 @@ namespace Serilog.Sinks.Batch
                 }
 
                 if (logEventList.Count > 0 && !_batchEventsCollection.IsAddingCompleted) {
-                    _batchEventsCollection.Add(logEventList);
+                    _batchEventsCollection.Add((logEventList, 0));
                 }
             }
             catch (InvalidOperationException) { }

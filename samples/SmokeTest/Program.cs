@@ -4,12 +4,18 @@ using System.Threading;
 using System.Threading.Tasks;
 using MySql.Data.MySqlClient;
 using Serilog;
+using Serilog.Debugging;
 
 namespace SmokeTest;
 
 internal static class Program
 {
     private static string ConnectionString;
+
+    // Points at a port that is not listening so every write fails fast.
+    private static string BadConnectionString =>
+        "Server=127.0.0.1;Port=3307;Database=nonexistent;Uid=nobody;Pwd=bad;" +
+        "AllowPublicKeyRetrieval=True;SslMode=None;Connect Timeout=2;";
 
     private static int Main()
     {
@@ -39,6 +45,8 @@ internal static class Program
             ("concurrent-emitters", ConcurrentEmitters),
             ("high-burst",          HighBurst),
             ("exception-column",    ExceptionColumn),
+            ("retry-backoff",       RetryBackoff),
+            ("batch-drop",          BatchDrop),
         };
 
         var allOk = true;
@@ -400,6 +408,119 @@ internal static class Program
                 if (!s.Contains("InvalidOperationException"))   return $"unexpected exception text: {s}";
                 return null;
             });
+    }
+
+    // -------------------------------------------------------------------------
+    // Scenario 10: retry backoff timing
+    // Triggers write failures by pointing at a non-listening port and verifies
+    // that PumpAsync logs retry messages with increasing delays. We wait 8s —
+    // enough to observe attempts 1 (delay 5s) and 2 (delay 10s) without
+    // running the full 135s retry cycle.
+    // -------------------------------------------------------------------------
+    private static bool RetryBackoff()
+    {
+        var log = new System.Collections.Concurrent.ConcurrentQueue<(string Msg, DateTime At)>();
+        SelfLog.Enable(msg => log.Enqueue((msg, DateTime.UtcNow)));
+
+        try
+        {
+            var start = DateTime.UtcNow;
+
+            var logger = new LoggerConfiguration()
+                .WriteTo.MySQL(BadConnectionString, "smoke_retry_backoff", batchSize: 1)
+                .CreateLogger();
+
+            logger.Information("Retry backoff test");
+
+            Console.WriteLine("    waiting 8s to observe first two retry attempts...");
+            Thread.Sleep(TimeSpan.FromSeconds(8));
+
+            ((IDisposable)logger).Dispose();
+
+            var entries = log.ToArray();
+            var a1 = Array.Find(entries, e => e.Msg.Contains("attempt 1/5"));
+            var a2 = Array.Find(entries, e => e.Msg.Contains("attempt 2/5"));
+
+            if (a1.Msg == null) {
+                Console.Error.WriteLine("FAIL SelfLog missing 'attempt 1/5' message");
+                return false;
+            }
+            if (a2.Msg == null) {
+                Console.Error.WriteLine("FAIL SelfLog missing 'attempt 2/5' message (delay may not have elapsed yet)");
+                return false;
+            }
+
+            var delta = (a2.At - a1.At).TotalSeconds;
+
+            // Delay before attempt 2 is 5s; allow ±2s for CI scheduling jitter.
+            if (delta < 3.0 || delta > 9.0) {
+                Console.Error.WriteLine($"FAIL expected ~5s between attempts 1 and 2, got {delta:F1}s");
+                return false;
+            }
+
+            Console.WriteLine($"OK   attempt 1/5 at +{(a1.At - start).TotalSeconds:F1}s");
+            Console.WriteLine($"OK   attempt 2/5 at +{(a2.At - start).TotalSeconds:F1}s (delta {delta:F1}s ≈ 5s expected)");
+            return true;
+        }
+        finally
+        {
+            SelfLog.Disable();
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Scenario 11: batch drop after max retries
+    // Runs the full backoff cycle (5 + 10 + 20 + 40 + 60 = 135s) and verifies
+    // that PumpAsync drops the batch with a clear SelfLog message and logs all
+    // five attempt messages. This test takes ~140s by design.
+    // -------------------------------------------------------------------------
+    private static bool BatchDrop()
+    {
+        // 5 + 10 + 20 + 40 + 60 = 135s of delays; +5s margin for task overhead.
+        const int waitSeconds = 140;
+
+        var log = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        SelfLog.Enable(msg => log.Enqueue(msg));
+
+        try
+        {
+            var logger = new LoggerConfiguration()
+                .WriteTo.MySQL(BadConnectionString, "smoke_batch_drop", batchSize: 1)
+                .CreateLogger();
+
+            logger.Information("Batch drop test event");
+
+            Console.WriteLine($"    waiting {waitSeconds}s for all 5 retry attempts to exhaust...");
+            Thread.Sleep(TimeSpan.FromSeconds(waitSeconds));
+
+            ((IDisposable)logger).Dispose();
+
+            var entries = log.ToArray();
+
+            // All five attempt messages must be present.
+            for (var i = 1; i <= 5; i++)
+            {
+                if (Array.Find(entries, m => m.Contains($"attempt {i}/5")) == null) {
+                    Console.Error.WriteLine($"FAIL SelfLog missing 'attempt {i}/5' message");
+                    return false;
+                }
+                Console.WriteLine($"OK   attempt {i}/5 logged");
+            }
+
+            // Drop message must appear after the fifth retry.
+            var dropMsg = Array.Find(entries, m => m.Contains("Dropping batch"));
+            if (dropMsg == null) {
+                Console.Error.WriteLine("FAIL SelfLog missing 'Dropping batch' message");
+                return false;
+            }
+
+            Console.WriteLine($"OK   {dropMsg}");
+            return true;
+        }
+        finally
+        {
+            SelfLog.Disable();
+        }
     }
 
     // -------------------------------------------------------------------------
