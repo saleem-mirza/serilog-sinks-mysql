@@ -49,4 +49,4 @@ In your application's App.config or Web.config file, specify the MySQL sink asse
 This sink version 4.1 has breaking changes. It expects an additional column `Template` of type Template `TEXT` in log table.
 It is recommended to add this column manually or delete existing table so that it can be recreated correctly. 
 
-[![Build status](https://ci.appveyor.com/api/projects/status/tse5g3weca5nmky3?svg=true)](https://ci.appveyor.com/project/SaleemMirza/serilog-sinks-mysql)
+[![CI](https://github.com/saleem-mirza/serilog-sinks-mysql/actions/workflows/ci.yml/badge.svg)](https://github.com/saleem-mirza/serilog-sinks-mysql/actions/workflows/ci.yml)
