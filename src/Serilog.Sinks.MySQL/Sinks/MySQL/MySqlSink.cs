@@ -90,6 +90,7 @@ namespace Serilog.Sinks.MySQL
 
         private void CreateTable(MySqlConnection sqlConnection)
         {
+            if (sqlConnection == null) return;
             try {
                 var cmd = sqlConnection.CreateCommand();
                 cmd.CommandText = _createTableSql;
@@ -118,7 +119,8 @@ namespace Serilog.Sinks.MySQL
                     timestamps[i] = _storeTimestampInUtc
                         ? logEvent.Timestamp.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss.fffzzz")
                         : logEvent.Timestamp.ToString("yyyy-MM-dd HH:mm:ss.fffzzz");
-                    levels[i]     = LevelNames[(int)logEvent.Level];
+                    var lv        = (int)logEvent.Level;
+                    levels[i]     = (uint)lv < (uint)LevelNames.Length ? LevelNames[lv] : logEvent.Level.ToString();
                     templates[i]  = logEvent.MessageTemplate.Text;
                     messages[i]   = logEvent.RenderMessage();
                     exceptions[i] = logEvent.Exception?.ToString();
@@ -137,21 +139,23 @@ namespace Serilog.Sinks.MySQL
                 }
 
                 // Phase 3: one connection, one command, one round-trip — no transaction needed
-                using (var sqlCon = GetSqlConnection())
-                using (var cmd = sqlCon.CreateCommand()) {
-                    cmd.CommandText = sb.ToString();
+                using (var sqlCon = GetSqlConnection()) {
+                    if (sqlCon == null) return false;
+                    using (var cmd = sqlCon.CreateCommand()) {
+                        cmd.CommandText = sb.ToString();
 
-                    for (var r = 0; r < n; r++) {
-                        cmd.Parameters.Add(new MySqlParameter($"@t{r}",  MySqlDbType.VarChar) { Value = timestamps[r] });
-                        cmd.Parameters.Add(new MySqlParameter($"@l{r}",  MySqlDbType.VarChar) { Value = levels[r] });
-                        cmd.Parameters.Add(new MySqlParameter($"@tm{r}", MySqlDbType.Text)    { Value = templates[r] });
-                        cmd.Parameters.Add(new MySqlParameter($"@m{r}",  MySqlDbType.Text)    { Value = messages[r] });
-                        cmd.Parameters.Add(new MySqlParameter($"@x{r}",  MySqlDbType.Text)    { Value = (object)exceptions[r] ?? DBNull.Value });
-                        cmd.Parameters.Add(new MySqlParameter($"@p{r}",  MySqlDbType.Text)    { Value = (object)properties[r] ?? DBNull.Value });
+                        for (var r = 0; r < n; r++) {
+                            cmd.Parameters.Add(new MySqlParameter($"@t{r}",  MySqlDbType.VarChar) { Value = timestamps[r] });
+                            cmd.Parameters.Add(new MySqlParameter($"@l{r}",  MySqlDbType.VarChar) { Value = levels[r] });
+                            cmd.Parameters.Add(new MySqlParameter($"@tm{r}", MySqlDbType.Text)    { Value = templates[r] });
+                            cmd.Parameters.Add(new MySqlParameter($"@m{r}",  MySqlDbType.Text)    { Value = messages[r] });
+                            cmd.Parameters.Add(new MySqlParameter($"@x{r}",  MySqlDbType.Text)    { Value = (object)exceptions[r] ?? DBNull.Value });
+                            cmd.Parameters.Add(new MySqlParameter($"@p{r}",  MySqlDbType.Text)    { Value = (object)properties[r] ?? DBNull.Value });
+                        }
+
+                        await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
+                        return true;
                     }
-
-                    await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
-                    return true;
                 }
             }
             catch (Exception ex) {
