@@ -51,11 +51,13 @@ namespace Serilog.Sinks.Batch
             // so memory-constrained hosts can cap channel memory at small values.
             var bufferSize = Math.Min(Math.Max(maxBufferSize, _batchSize), MaxSupportedBufferSize);
 
-            // Wait + TryWrite gives us a false return when full, which we surface
-            // as a drop with a counter. The other FullMode values silently succeed
-            // on TryWrite even when the item is discarded.
+            // DropWrite + TryWrite returns false immediately when full, which we
+            // surface as a counted drop. DropNewest/DropOldest always return true
+            // from TryWrite (silently discarding items), hiding the drop. Wait has
+            // identical TryWrite semantics to DropWrite but implies callers may
+            // block via WriteAsync — misleading since we only ever call TryWrite.
             _channel = Channel.CreateBounded<LogEvent>(new BoundedChannelOptions(bufferSize) {
-                FullMode                      = BoundedChannelFullMode.Wait,
+                FullMode                      = BoundedChannelFullMode.DropWrite,
                 SingleReader                  = true,
                 SingleWriter                  = false,
                 AllowSynchronousContinuations = false,
@@ -201,6 +203,7 @@ namespace Serilog.Sinks.Batch
         public void Dispose()
         {
             Dispose(true);
+            GC.SuppressFinalize(this);
         }
 
         #endregion
