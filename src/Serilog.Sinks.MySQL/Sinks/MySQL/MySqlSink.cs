@@ -1,11 +1,11 @@
-﻿// Copyright 2017 Zethian Inc.
-// 
+// Copyright 2019-2026 Zethian Inc.
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// 
+//
 //     http://www.apache.org/licenses/LICENSE-2.0
-// 
+//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -16,7 +16,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Threading.Tasks;
-using MySql.Data.MySqlClient;
+using MySqlConnector;
 using Serilog.Core;
 using Serilog.Debugging;
 using Serilog.Events;
@@ -27,9 +27,18 @@ namespace Serilog.Sinks.MySQL
 {
     internal class MySqlSink : BatchProvider, ILogEventSink
     {
+        // Indexed by (int)LogEventLevel — Verbose=0 … Fatal=5 (contiguous, stable)
+        private static readonly string[] LevelNames = { "Verbose", "Debug", "Information", "Warning", "Error", "Fatal" };
+
+        // BatchProvider guarantees single-writer-thread invocation, so [ThreadStatic] is contention-free
+        [ThreadStatic]
+        private static StringBuilder _sharedBuilder;
+
         private readonly string _connectionString;
         private readonly bool _storeTimestampInUtc;
         private readonly string _tableName;
+        private readonly string _insertPrefix;
+        private readonly string _createTableSql;
 
         public MySqlSink(
             string connectionString,
@@ -37,12 +46,26 @@ namespace Serilog.Sinks.MySQL
             bool storeTimestampInUtc = false,
             uint batchSize = 100) : base((int) batchSize)
         {
-            _connectionString = connectionString;
-            _tableName = tableName;
+            _connectionString    = connectionString;
+            _tableName           = tableName;
             _storeTimestampInUtc = storeTimestampInUtc;
 
-            var sqlConnection = GetSqlConnection();
-            CreateTable(sqlConnection);
+            var escaped = tableName.Replace("`", "``");
+            _insertPrefix   = $"INSERT INTO `{escaped}` (Timestamp,Level,Template,Message,Exception,Properties) VALUES ";
+            _createTableSql = $"CREATE TABLE IF NOT EXISTS `{escaped}` (" +
+                              "id INT NOT NULL AUTO_INCREMENT PRIMARY KEY," +
+                              "Timestamp VARCHAR(100)," +
+                              "Level VARCHAR(15)," +
+                              "Template TEXT," +
+                              "Message TEXT," +
+                              "Exception TEXT," +
+                              "Properties TEXT," +
+                              "_ts TIMESTAMP DEFAULT CURRENT_TIMESTAMP)";
+
+            using (var sqlConnection = GetSqlConnection())
+            {
+                CreateTable(sqlConnection);
+            }
         }
 
         public void Emit(LogEvent logEvent)
@@ -52,102 +75,92 @@ namespace Serilog.Sinks.MySQL
 
         private MySqlConnection GetSqlConnection()
         {
-            try
-            {
+            try {
                 var conn = new MySqlConnection(_connectionString);
                 conn.Open();
+
                 return conn;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) {
                 SelfLog.WriteLine(ex.Message);
+
                 return null;
             }
         }
 
-        private MySqlCommand GetInsertCommand(MySqlConnection sqlConnection)
-        {
-            var tableCommandBuilder = new StringBuilder();
-            tableCommandBuilder.Append($"INSERT INTO  {_tableName} (");
-            tableCommandBuilder.Append("Timestamp, Level, Message, Exception, Properties) ");
-            tableCommandBuilder.Append("VALUES (@ts, @lvel, @msg, @ex, @prop)");
-
-            var cmd = sqlConnection.CreateCommand();
-            cmd.CommandText = tableCommandBuilder.ToString();
-
-            cmd.Parameters.Add(new MySqlParameter("@ts", MySqlDbType.VarChar));
-            cmd.Parameters.Add(new MySqlParameter("@lvel", MySqlDbType.VarChar));
-            cmd.Parameters.Add(new MySqlParameter("@msg", MySqlDbType.VarChar));
-            cmd.Parameters.Add(new MySqlParameter("@ex", MySqlDbType.VarChar));
-            cmd.Parameters.Add(new MySqlParameter("@prop", MySqlDbType.VarChar));
-
-            return cmd;
-        }
-
         private void CreateTable(MySqlConnection sqlConnection)
         {
-            try
-            {
-                var tableCommandBuilder = new StringBuilder();
-                tableCommandBuilder.Append($"CREATE TABLE IF NOT EXISTS {_tableName} (");
-                tableCommandBuilder.Append("id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,");
-                tableCommandBuilder.Append("Timestamp VARCHAR(100),");
-                tableCommandBuilder.Append("Level VARCHAR(15),");
-                tableCommandBuilder.Append("Message TEXT,");
-                tableCommandBuilder.Append("Exception TEXT,");
-                tableCommandBuilder.Append("Properties TEXT,");
-                tableCommandBuilder.Append("_ts TIMESTAMP)");
-
+            if (sqlConnection == null) return;
+            try {
                 var cmd = sqlConnection.CreateCommand();
-                cmd.CommandText = tableCommandBuilder.ToString();
+                cmd.CommandText = _createTableSql;
                 cmd.ExecuteNonQuery();
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) {
                 SelfLog.WriteLine(ex.Message);
             }
         }
 
         protected override async Task<bool> WriteLogEventAsync(ICollection<LogEvent> logEventsBatch)
         {
-            try
-            {
-                using (var sqlCon = GetSqlConnection())
-                {
-                    using (var tr = await sqlCon.BeginTransactionAsync()
-                        .ConfigureAwait(false))
-                    {
-                        var insertCommand = GetInsertCommand(sqlCon);
-                        insertCommand.Transaction = tr;
+            try {
+                var n = logEventsBatch.Count;
 
-                        foreach (var logEvent in logEventsBatch)
-                        {
-                            insertCommand.Parameters["@ts"]
-                                .Value = _storeTimestampInUtc
-                                ? logEvent.Timestamp.ToUniversalTime()
-                                    .ToString("yyyy-MM-dd HH:mm:ss.fffzzz")
-                                : logEvent.Timestamp.ToString("yyyy-MM-dd HH:mm:ss.fffzzz");
+                // Phase 1: format all column values before opening the connection
+                var timestamps = new string[n];
+                var levels     = new string[n];
+                var templates  = new string[n];
+                var messages   = new string[n];
+                var exceptions = new string[n];
+                var properties = new string[n];
 
-                            insertCommand.Parameters["@lvel"]
-                                .Value = logEvent.Level.ToString();
-                            insertCommand.Parameters["@msg"]
-                                .Value = logEvent.MessageTemplate.ToString();
-                            insertCommand.Parameters["@ex"]
-                                .Value = logEvent.Exception?.ToString();
-                            insertCommand.Parameters["@prop"]
-                                .Value = logEvent.Properties.Json();
+                var i = 0;
+                foreach (var logEvent in logEventsBatch) {
+                    timestamps[i] = _storeTimestampInUtc
+                        ? logEvent.Timestamp.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss.fffzzz")
+                        : logEvent.Timestamp.ToString("yyyy-MM-dd HH:mm:ss.fffzzz");
+                    var lv        = (int)logEvent.Level;
+                    levels[i]     = (uint)lv < (uint)LevelNames.Length ? LevelNames[lv] : logEvent.Level.ToString();
+                    templates[i]  = logEvent.MessageTemplate.Text;
+                    messages[i]   = logEvent.RenderMessage();
+                    exceptions[i] = logEvent.Exception?.ToString();
+                    properties[i] = logEvent.Properties.Count > 0 ? logEvent.Properties.Json() : null;
+                    i++;
+                }
 
-                            await insertCommand.ExecuteNonQueryAsync()
-                                .ConfigureAwait(false);
+                // Phase 2: build single multi-row INSERT using pooled StringBuilder
+                if (_sharedBuilder == null) _sharedBuilder = new StringBuilder();
+                var sb = _sharedBuilder;
+                sb.Clear();
+                sb.Append(_insertPrefix);
+                for (var r = 0; r < n; r++) {
+                    if (r > 0) sb.Append(',');
+                    sb.Append($"(@t{r},@l{r},@tm{r},@m{r},@x{r},@p{r})");
+                }
+
+                // Phase 3: one connection, one command, one round-trip — no transaction needed
+                using (var sqlCon = GetSqlConnection()) {
+                    if (sqlCon == null) return false;
+                    using (var cmd = sqlCon.CreateCommand()) {
+                        cmd.CommandText = sb.ToString();
+
+                        for (var r = 0; r < n; r++) {
+                            cmd.Parameters.Add(new MySqlParameter($"@t{r}",  MySqlDbType.VarChar) { Value = timestamps[r] });
+                            cmd.Parameters.Add(new MySqlParameter($"@l{r}",  MySqlDbType.VarChar) { Value = levels[r] });
+                            cmd.Parameters.Add(new MySqlParameter($"@tm{r}", MySqlDbType.Text)    { Value = templates[r] });
+                            cmd.Parameters.Add(new MySqlParameter($"@m{r}",  MySqlDbType.Text)    { Value = messages[r] });
+                            cmd.Parameters.Add(new MySqlParameter($"@x{r}",  MySqlDbType.Text)    { Value = (object)exceptions[r] ?? DBNull.Value });
+                            cmd.Parameters.Add(new MySqlParameter($"@p{r}",  MySqlDbType.Text)    { Value = (object)properties[r] ?? DBNull.Value });
                         }
-                        tr.Commit();
+
+                        await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
                         return true;
                     }
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) {
                 SelfLog.WriteLine(ex.Message);
+
                 return false;
             }
         }
