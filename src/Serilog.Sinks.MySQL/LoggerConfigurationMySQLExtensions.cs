@@ -54,8 +54,11 @@ namespace Serilog
             if (string.IsNullOrEmpty(connectionString))
                 throw new ArgumentNullException(nameof(connectionString));
 
+            if (string.IsNullOrEmpty(tableName))
+                throw new ArgumentNullException(nameof(tableName));
+
             if (batchSize < 1 || batchSize > 1000)
-                throw new ArgumentOutOfRangeException("[batchSize] argument must be between 1 and 1000 inclusive");
+                throw new ArgumentOutOfRangeException(nameof(batchSize), batchSize, "must be between 1 and 1000 inclusive");
 
             try {
                 return loggerConfiguration.Sink(
@@ -64,7 +67,7 @@ namespace Serilog
                     levelSwitch);
             }
             catch (Exception ex) {
-                SelfLog.WriteLine(ex.Message);
+                SelfLog.WriteLine("Failed to create MySQL sink: {0}", ex);
 
                 throw;
             }

@@ -195,7 +195,8 @@ namespace Serilog.Sinks.Batch
                 SelfLog.WriteLine("Error during dispose: {0}", ex);
             }
             finally {
-                _shutdownCts.Dispose();
+                // An abandoned writer still reads _shutdownCts.Token; disposing it would throw there.
+                if (_writerTask.IsCompleted) _shutdownCts.Dispose();
                 SelfLog.WriteLine("Sink halted successfully.");
             }
         }
