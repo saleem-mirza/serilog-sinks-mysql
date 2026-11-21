@@ -30,15 +30,15 @@ namespace Serilog.Sinks.MySQL
         // Indexed by (int)LogEventLevel — Verbose=0 … Fatal=5 (contiguous, stable)
         private static readonly string[] LevelNames = { "Verbose", "Debug", "Information", "Warning", "Error", "Fatal" };
 
-        // BatchProvider guarantees single-writer-thread invocation, so [ThreadStatic] is contention-free
-        [ThreadStatic]
-        private static StringBuilder _sharedBuilder;
-
         private readonly string _connectionString;
         private readonly bool _storeTimestampInUtc;
         private readonly string _tableName;
         private readonly string _insertPrefix;
         private readonly string _createTableSql;
+
+        // Only BatchProvider's single RunAsync loop touches these, never concurrently.
+        private readonly StringBuilder _sb = new StringBuilder();
+        private bool _tableReady;
 
         public MySqlSink(
             string connectionString,
@@ -61,11 +61,6 @@ namespace Serilog.Sinks.MySQL
                               "Exception TEXT," +
                               "Properties TEXT," +
                               "_ts TIMESTAMP DEFAULT CURRENT_TIMESTAMP)";
-
-            using (var sqlConnection = GetSqlConnection())
-            {
-                CreateTable(sqlConnection);
-            }
         }
 
         public void Emit(LogEvent logEvent)
@@ -73,31 +68,20 @@ namespace Serilog.Sinks.MySQL
             PushEvent(logEvent);
         }
 
-        private MySqlConnection GetSqlConnection()
+        private async Task<MySqlConnection> GetSqlConnectionAsync()
         {
+            MySqlConnection conn = null;
             try {
-                var conn = new MySqlConnection(_connectionString);
-                conn.Open();
+                conn = new MySqlConnection(_connectionString);
+                await conn.OpenAsync().ConfigureAwait(false);
 
                 return conn;
             }
             catch (Exception ex) {
-                SelfLog.WriteLine(ex.Message);
+                conn?.Dispose();
+                SelfLog.WriteLine("Failed to open MySQL connection: {0}", ex);
 
                 return null;
-            }
-        }
-
-        private void CreateTable(MySqlConnection sqlConnection)
-        {
-            if (sqlConnection == null) return;
-            try {
-                var cmd = sqlConnection.CreateCommand();
-                cmd.CommandText = _createTableSql;
-                cmd.ExecuteNonQuery();
-            }
-            catch (Exception ex) {
-                SelfLog.WriteLine(ex.Message);
             }
         }
 
@@ -124,13 +108,12 @@ namespace Serilog.Sinks.MySQL
                     templates[i]  = logEvent.MessageTemplate.Text;
                     messages[i]   = logEvent.RenderMessage();
                     exceptions[i] = logEvent.Exception?.ToString();
-                    properties[i] = logEvent.Properties.Count > 0 ? logEvent.Properties.Json() : null;
+                    properties[i] = SerializeProperties(logEvent);
                     i++;
                 }
 
                 // Phase 2: build single multi-row INSERT using pooled StringBuilder
-                if (_sharedBuilder == null) _sharedBuilder = new StringBuilder();
-                var sb = _sharedBuilder;
+                var sb = _sb;
                 sb.Clear();
                 sb.Append(_insertPrefix);
                 for (var r = 0; r < n; r++) {
@@ -139,8 +122,18 @@ namespace Serilog.Sinks.MySQL
                 }
 
                 // Phase 3: one connection, one command, one round-trip — no transaction needed
-                using (var sqlCon = GetSqlConnection()) {
+                using (var sqlCon = await GetSqlConnectionAsync().ConfigureAwait(false)) {
                     if (sqlCon == null) return false;
+
+                    // Created lazily so a DB that was down at startup still gets its table.
+                    if (!_tableReady) {
+                        using (var create = sqlCon.CreateCommand()) {
+                            create.CommandText = _createTableSql;
+                            await create.ExecuteNonQueryAsync().ConfigureAwait(false);
+                        }
+                        _tableReady = true;
+                    }
+
                     using (var cmd = sqlCon.CreateCommand()) {
                         cmd.CommandText = sb.ToString();
 
@@ -158,10 +151,42 @@ namespace Serilog.Sinks.MySQL
                     }
                 }
             }
-            catch (Exception ex) {
-                SelfLog.WriteLine(ex.Message);
+            catch (MySqlException ex) when (ex.ErrorCode == MySqlErrorCode.NoSuchTable) {
+                SelfLog.WriteLine("Log table missing, will recreate on retry: {0}", ex);
+                _tableReady = false;
 
                 return false;
+            }
+            catch (MySqlException ex) when (IsPoisonBatch(ex.ErrorCode)) {
+                // Retrying can never succeed; return true ("handled") so BatchProvider moves on.
+                SelfLog.WriteLine("Dropping batch of {0} events, error is not retryable: {1}", logEventsBatch.Count, ex);
+
+                return true;
+            }
+            catch (Exception ex) {
+                SelfLog.WriteLine("Failed to write batch: {0}", ex);
+
+                return false;
+            }
+        }
+
+        // Allowlist, not !IsTransient: anything unlisted (e.g. a network drop mid-query) keeps retrying.
+        private static bool IsPoisonBatch(MySqlErrorCode code) =>
+            code == MySqlErrorCode.DataTooLong ||
+            code == MySqlErrorCode.ParseError ||
+            code == MySqlErrorCode.BadFieldError ||
+            code == MySqlErrorCode.TruncatedWrongValueForField;
+
+        private static string SerializeProperties(LogEvent logEvent)
+        {
+            if (logEvent.Properties.Count == 0) return null;
+            try {
+                return logEvent.Properties.Json();
+            }
+            catch (Exception ex) {
+                SelfLog.WriteLine("Properties serialization failed, storing NULL: {0}", ex);
+
+                return null;
             }
         }
     }
